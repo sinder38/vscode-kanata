@@ -1,6 +1,6 @@
 [package]
 name = "kanata-ls"
-version = "0.0.0"
+version = "0.15.23"
 description = "Language server for kanata keyboard remapper"
 keywords = ["kanata", "lsp"]
 categories = ["config", "development-tools", "parsing"]

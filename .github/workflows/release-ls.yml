@@ -16,6 +16,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   BIN_NAME: kanata-ls
+  PKG_NAME: kanata-ls-sinder
 
 jobs:
   build:
@@ -89,7 +90,7 @@ jobs:
             PKG_VERSION=${GITHUB_SHA:0:7}
           fi
 
-          PKG_BASENAME="${{ env.BIN_NAME }}-${PKG_VERSION}-${{ matrix.platform }}"
+          PKG_BASENAME="${{ env.PKG_NAME }}-${PKG_VERSION}-${{ matrix.platform }}"
 
           if [[ "${{ matrix.os }}" = windows-* ]]; then
             PKG_SUFFIX="zip"
@@ -119,7 +120,7 @@ jobs:
           BIN="kanata-ls/target/${{ matrix.rust_target }}/release/${{ env.BIN_NAME }}${BIN_EXT}"
 
           mkdir -p "${STAGING}"
-          cp "${BIN}" "${STAGING}/"
+          cp "${BIN}" "${STAGING}/${{ env.PKG_NAME }}${BIN_EXT}"
 
           pushd "${STAGING}" >/dev/null
           if [[ "${{ matrix.os }}" = windows-* ]]; then
