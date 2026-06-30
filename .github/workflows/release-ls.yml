@@ -1,0 +1,143 @@
+name: release-ls
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - ci/*
+  pull_request:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: kanata-ls
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              os: ubuntu-latest,
+              platform: linux-x64,
+              rust_target: x86_64-unknown-linux-gnu,
+            }
+          - {
+              os: macos-latest,
+              platform: darwin-x64,
+              rust_target: x86_64-apple-darwin,
+            }
+          - {
+              os: macos-latest,
+              platform: darwin-arm64,
+              rust_target: aarch64-apple-darwin,
+            }
+          - {
+              os: windows-latest,
+              platform: win32-x64,
+              rust_target: x86_64-pc-windows-msvc,
+            }
+          - {
+              os: windows-latest,
+              platform: win32-ia32,
+              rust_target: i686-pc-windows-msvc,
+            }
+          - {
+              os: windows-latest,
+              platform: win32-arm64,
+              rust_target: aarch64-pc-windows-msvc,
+            }
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            kanata-ls/target/
+          key: ${{ runner.os }}-${{ matrix.rust_target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --bin kanata-ls --release --target ${{ matrix.rust_target }}
+        working-directory: kanata-ls
+
+      - name: Set variables
+        id: vars
+        shell: bash
+        run: |
+          if [[ $GITHUB_REF = refs/tags/* ]]; then
+            PKG_VERSION=${GITHUB_REF##*/}
+          else
+            PKG_VERSION=${GITHUB_SHA:0:7}
+          fi
+
+          PKG_BASENAME="${{ env.BIN_NAME }}-${PKG_VERSION}-${{ matrix.platform }}"
+
+          if [[ "${{ matrix.os }}" = windows-* ]]; then
+            PKG_SUFFIX="zip"
+            BIN_EXT=".exe"
+          else
+            PKG_SUFFIX="tar.gz"
+            BIN_EXT=""
+          fi
+
+          PKG_NAME="${PKG_BASENAME}.${PKG_SUFFIX}"
+          PKG_STAGING="ci_staging/${PKG_BASENAME}"
+
+          echo "PKG_VERSION=${PKG_VERSION}"            >> $GITHUB_OUTPUT
+          echo "PKG_BASENAME=${PKG_BASENAME}"          >> $GITHUB_OUTPUT
+          echo "PKG_NAME=${PKG_NAME}"                  >> $GITHUB_OUTPUT
+          echo "PKG_PATH=${PKG_STAGING}/${PKG_NAME}"   >> $GITHUB_OUTPUT
+          echo "PKG_STAGING=${PKG_STAGING}"            >> $GITHUB_OUTPUT
+          echo "BIN_EXT=${BIN_EXT}"                    >> $GITHUB_OUTPUT
+
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          STAGING="${{ steps.vars.outputs.PKG_STAGING }}"
+          NAME="${{ steps.vars.outputs.PKG_NAME }}"
+          BIN_EXT="${{ steps.vars.outputs.BIN_EXT }}"
+          BIN="kanata-ls/target/${{ matrix.rust_target }}/release/${{ env.BIN_NAME }}${BIN_EXT}"
+
+          mkdir -p "${STAGING}"
+          cp "${BIN}" "${STAGING}/"
+
+          pushd "${STAGING}" >/dev/null
+          if [[ "${{ matrix.os }}" = windows-* ]]; then
+            7z a "${NAME}" * | tail -2
+          else
+            tar czf "${NAME}" *
+          fi
+          popd >/dev/null
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.vars.outputs.PKG_BASENAME }}
+          path: kanata-ls/target/${{ matrix.rust_target }}/release/${{ env.BIN_NAME }}${{ steps.vars.outputs.BIN_EXT }}
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          files: ${{ steps.vars.outputs.PKG_PATH }}
